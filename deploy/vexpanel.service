@@ -1,0 +1,21 @@
+[Unit]
+Description=VEXPANEL hosting control panel
+After=network-online.target mariadb.service nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vexpanel/vexpanel.env
+WorkingDirectory=/opt/vexpanel
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /opt/vexpanel/dist/server/index.js
+Restart=on-failure
+RestartSec=3
+# The panel manages system users and service config, so it runs as root.
+User=root
+NoNewPrivileges=false
+ProtectSystem=false
+PrivateTmp=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
