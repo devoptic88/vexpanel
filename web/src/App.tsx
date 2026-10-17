@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  Activity, Boxes, Clock, Database, FolderOpen, Globe, Home, KeyRound, LayoutDashboard, ListChecks, LogOut, Mail, Menu, Network, ShieldCheck, Users,
+  Activity, Boxes, Clock, LayoutGrid, Database, FolderOpen, Globe, Home, KeyRound, LayoutDashboard, ListChecks, LogOut, Mail, Menu, Network, ShieldCheck, Users,
 } from 'lucide-react';
 import { get, post, type Me } from './api';
 import { Link, Loading, navigate, usePath } from './components/ui';
@@ -17,6 +17,7 @@ import Email from './pages/user/Email';
 import Dns from './pages/user/Dns';
 import Ssl from './pages/user/Ssl';
 import Cron from './pages/user/Cron';
+import Apps from './pages/user/Apps';
 import Password from './pages/Password';
 
 interface NavItem { to: string; label: string; icon: ReactNode }
@@ -44,6 +45,7 @@ const USER_NAV: Array<{ group?: string; items: NavItem[] }> = [
   {
     group: 'Websites',
     items: [
+      { to: '/apps', label: 'Apps', icon: <LayoutGrid /> },
       { to: '/domains', label: 'Domains', icon: <Globe /> },
       { to: '/files', label: 'File manager', icon: <FolderOpen /> },
       { to: '/ssl', label: 'SSL certificates', icon: <ShieldCheck /> },
@@ -124,6 +126,7 @@ function Route({ path, admin }: { path: string; admin: boolean }) {
     case '/dns': return <Dns />;
     case '/ssl': return <Ssl />;
     case '/cron': return <Cron />;
+    case '/apps': return <Apps />;
     default: return <UserHome />;
   }
 }

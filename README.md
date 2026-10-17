@@ -3,7 +3,8 @@
 A self-hosted web hosting control panel for Ubuntu 24.04 — the same job cPanel/WHM does, as one open Node.js service.
 
 - **Admin side (WHM-style):** server health, hosting packages, create / suspend / terminate accounts, "log in as" any account, activity log.
-- **Account side (cPanel-style):** domains and subdomains, file manager, MariaDB databases and users, mailboxes and forwarders, DNS zone editor, Let's Encrypt certificates, cron jobs.
+- **Account side (cPanel-style):** one-click app installer, domains and subdomains, file manager, MariaDB databases and users, mailboxes and forwarders, DNS zone editor, Let's Encrypt certificates, cron jobs.
+- **No domain needed to start:** every account's site is also reachable at `http://<server-ip>/~username/`.
 
 It drives the standard Ubuntu stack directly — nginx + PHP-FPM, MariaDB, Postfix + Dovecot, BIND 9 and certbot — so everything it configures is plain config you can read under `/etc`.
 
@@ -40,6 +41,30 @@ Re-running the installer upgrades the panel in place and keeps all data.
 | 25, 587 | SMTP, submission |
 | 993 | IMAP over TLS |
 | 22 | SFTP for hosting accounts |
+
+## App installer
+
+The **Apps** page installs web apps into any domain (or the IP preview) and folder. The server downloads the current release itself, unpacks it as the account's own Linux user, and creates a database and database user when the app needs one.
+
+| App | Setup |
+|---|---|
+| WordPress, phpBB | Fully automatic: site title and admin account are set from the install form |
+| phpMyAdmin | Configured automatically; sign in with a database user |
+| MyBB, Simple Machines Forum, Joomla, Drupal, Matomo | Files and database prepared; finish on the app's own setup page with the database details the panel shows |
+| DokuWiki | Files prepared; finish on its setup page (no database) |
+| Upload your own | vBulletin, XenForo, Invision Community or any licensed PHP app: upload its .zip/.tar.gz in the file manager, then install it from there |
+
+Apps can be nested (a blog at the root, a forum in `/forum`). Removing an app deletes its files and, optionally, its database; apps in its subfolders are kept.
+
+Download sources are resolved at install time (WordPress, Drupal, DokuWiki, Matomo and phpMyAdmin "latest" links; GitHub's latest release for MyBB and SMF; phpBB's version feed). Joomla is pinned to a version. To pin a version or use a mirror, override any app in `/etc/vexpanel/apps.json`:
+
+```json
+{ "joomla": { "source": { "type": "url", "url": "https://downloads.joomla.org/…/Joomla_6-2-0-Stable-Full_Package.zip?format=zip" } } }
+```
+
+## IP preview
+
+Before a domain points at the server, each account's main site is served at `http://<server-ip>/~username/`, with PHP running in that account's own pool. All accounts share the IP's origin (and its cookies), so treat it as a preview and testing address; use a real domain for production sites. Apps installed "on the server IP" store that address as their site URL.
 
 ## How it works
 
@@ -111,7 +136,7 @@ test/                 node:test suites
 
 ## Not built yet
 
-Things cPanel has that this first version doesn't: backups and restores, phpMyAdmin / webmail links, bandwidth accounting, DKIM signing, spam filtering, multiple PHP versions per domain, resellers, a billing/WHMCS-style module, and extracting archives in the file manager.
+Things cPanel has that this version doesn't: backups and restores, webmail, bandwidth accounting, DKIM signing, spam filtering, multiple PHP versions per domain, resellers, a billing/WHMCS-style module, app updates from the panel, and extracting archives in the file manager.
 
 ## License
 

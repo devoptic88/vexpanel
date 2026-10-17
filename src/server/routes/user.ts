@@ -11,6 +11,7 @@ import { applyMail, dovecotHash, removeMailboxDir } from '../services/mail.js';
 import * as mysql from '../services/mysql.js';
 import { disableSsl, issueCertificate } from '../services/ssl.js';
 import { serial } from '../sys/exec.js';
+import { previewUrl } from '../services/web.js';
 import { config } from '../config.js';
 import * as v from '../validate.js';
 
@@ -38,6 +39,7 @@ export default async function userRoutes(app: FastifyInstance) {
       domain: main?.name ?? null,
       home: `${config.homeBase}/${u.username}`,
       serverIp: config.serverIp,
+      previewUrl: previewUrl(u.username),
       nameservers: config.nameservers,
       hostname: config.hostname,
       package: pkg,

@@ -7,8 +7,11 @@
  * Content for write/upload arrives on stdin; read/download write to stdout.
  * Every other op prints one JSON line.
  */
+import { execFile } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 const [, , rawBase, op, rawArgs] = process.argv;
@@ -137,6 +140,72 @@ async function main() {
     case 'du': {
       return print({ bytes: await du(base) });
     }
+
+    // ---- App installer ops ----
+    case 'fetch': {
+      // Download a package into the account's home. Size-capped; redirects followed.
+      const dest = await resolve(args.path);
+      const max = Number(args.maxBytes ?? 600 * 1024 * 1024);
+      const res = await fetch(String(args.url), { redirect: 'follow', headers: { 'user-agent': 'VEXPANEL app installer' }, signal: AbortSignal.timeout(15 * 60_000) });
+      if (!res.ok || !res.body) throw new UserFacing(`Download failed: the server answered ${res.status}.`);
+      let seen = 0;
+      const cap = new Transform({
+        transform(chunk: Buffer, _enc, cb) {
+          seen += chunk.length;
+          if (seen > max) cb(new UserFacing('The package is larger than the size limit.'));
+          else cb(null, chunk);
+        },
+      });
+      await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), cap, createWriteStream(dest, { mode: 0o600 }));
+      return print({ ok: true, bytes: seen });
+    }
+    case 'extract': {
+      // Unpack an archive and move the app's files into an empty target folder.
+      const archive = await resolve(args.archive, { mustExist: true });
+      const target = await resolve(args.target);
+      if (target === base) throw new UserFacing('Choose a folder inside your home directory.');
+      await ensureEmptyTarget(target);
+      const stage = await resolve(`tmp/vex-extract-${randomBytes(6).toString('hex')}`);
+      await fs.mkdir(stage, { recursive: true, mode: 0o700 });
+      try {
+        await unpack(archive, stage);
+        const src = await locateApp(stage, args.subdir as string | undefined);
+        await fs.mkdir(target, { recursive: true, mode: 0o755 });
+        let n = 0;
+        for (const name of await fs.readdir(src)) {
+          await fs.rename(path.join(src, name), path.join(target, name));
+          n++;
+        }
+        if (n === 0) throw new UserFacing('The package was empty.');
+        await normalizeModes(target);
+        return print({ ok: true, entries: n });
+      } finally {
+        await fs.rm(stage, { recursive: true, force: true });
+      }
+    }
+    case 'rmtree': {
+      // Remove an installed app. contentsOnly keeps the folder itself (used for a web root).
+      const target = await resolve(args.path, { mustExist: true });
+      if (target === base) throw new UserFacing('Refusing to remove your home directory.');
+      if (args.contentsOnly) {
+        const keep = new Set((args.keep as string[] | undefined) ?? []);
+        for (const name of await fs.readdir(target)) {
+          if (!keep.has(name)) await fs.rm(path.join(target, name), { recursive: true, force: true });
+        }
+      } else {
+        await fs.rm(target, { recursive: true, force: true });
+      }
+      return print({ ok: true });
+    }
+    case 'exists': {
+      const p = await resolve(args.path);
+      try {
+        const st = await fs.lstat(p);
+        return print({ exists: true, dir: st.isDirectory(), size: st.size });
+      } catch {
+        return print({ exists: false });
+      }
+    }
     default:
       throw new UserFacing(`Unknown operation ${op}`);
   }
@@ -152,6 +221,79 @@ async function du(p: string): Promise<number> {
     for (const e of entries) total += await du(path.join(p, e));
   }
   return total;
+}
+
+const WELCOME_MARKER = 'hosted with VEXPANEL';
+
+/** A target folder must be missing, empty, or hold only the panel's own welcome page (which is removed). */
+async function ensureEmptyTarget(target: string) {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(target);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw e;
+  }
+  if (entries.length === 0) return;
+  if (entries.length === 1 && entries[0] === 'index.html') {
+    const content = await fs.readFile(path.join(target, 'index.html'), 'utf8').catch(() => '');
+    if (content.includes(WELCOME_MARKER)) {
+      await fs.rm(path.join(target, 'index.html'));
+      return;
+    }
+  }
+  throw new UserFacing('That folder already has files in it. Choose an empty folder, or remove its contents first.');
+}
+
+function sh(cmd: string, argv: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, argv, { cwd, maxBuffer: 8 * 1024 * 1024, timeout: 10 * 60_000 }, (err, _out, errOut) => {
+      if (err) reject(new UserFacing(`Couldn't unpack the package: ${String(errOut || err.message).trim().split('\n').slice(-2).join(' ')}`));
+      else resolve();
+    });
+  });
+}
+
+async function unpack(archive: string, dest: string) {
+  const fh = await fs.open(archive, 'r');
+  const head = Buffer.alloc(8);
+  await fh.read(head, 0, 8, 0);
+  await fh.close();
+  if (head[0] === 0x50 && head[1] === 0x4b) {
+    await sh('unzip', ['-q', '-o', archive, '-d', dest], dest);
+  } else {
+    // GNU tar detects gzip, bzip2 and xz itself; the flags keep extracted files owned by us with sane modes.
+    await sh('tar', ['-xf', archive, '-C', dest, '--no-same-owner', '--no-same-permissions'], dest);
+  }
+}
+
+/** Find the folder inside an unpacked archive that holds the app. */
+async function locateApp(stage: string, subdir?: string): Promise<string> {
+  const top = await fs.readdir(stage, { withFileTypes: true });
+  if (subdir) {
+    const re = new RegExp('^' + subdir.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i');
+    const hit = top.find((e) => e.isDirectory() && re.test(e.name));
+    if (hit) return path.join(stage, hit.name);
+  }
+  const dirs = top.filter((e) => e.isDirectory());
+  if (top.length === 1 && dirs.length === 1) return path.join(stage, dirs[0].name);
+  // A single folder alongside only loose readme/licence files, e.g. Matomo's zip.
+  if (dirs.length === 1 && top.every((e) => e.isDirectory() || !/\.php$/i.test(e.name))) return path.join(stage, dirs[0].name);
+  return stage;
+}
+
+/** Folders 755 and files 644 so the web server can read them; symlinks are left alone. */
+async function normalizeModes(dir: string) {
+  for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isSymbolicLink()) continue;
+    if (e.isDirectory()) {
+      await fs.chmod(p, 0o755);
+      await normalizeModes(p);
+    } else {
+      await fs.chmod(p, 0o644);
+    }
+  }
 }
 
 function print(v: unknown) {

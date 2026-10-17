@@ -89,7 +89,7 @@ function CreateAccount({ pkgs, onClose, onDone }: { pkgs: Pkg[]; onClose: () => 
       onClose={onClose}
       onSubmit={async () => { await post('/api/admin/accounts', { ...f, packageId: Number(f.packageId) }); onDone(); }}
     >
-      <Field label="Domain" hint="The account's main website. Point its DNS at this server's nameservers.">
+      <Field label="Domain" hint="The account's main website. No domain yet? Use a placeholder like mysite.test; the site also works at http://server-ip/~username/.">
         <input value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value, username: f.username || suggest(e.target.value) })} placeholder="example.com" autoFocus />
       </Field>
       <div className="form-row">

@@ -89,3 +89,36 @@ test('validators reject dangerous input', () => {
   assert.equal(v.cronSchedule('*/15  *  * * mon-fri'), '*/15 * * * mon-fri');
   assert.equal(v.dbSuffix('wp', 'ex', 64), 'ex_wp');
 });
+
+test('app installer config renderers', async () => {
+  const { renderWpConfig, renderPhpbbConfig, renderPhpMyAdminConfig } = await import('../src/server/services/apps.ts');
+  const wp = renderWpConfig({ name: "a_wp", user: "a_wp", password: "p'q\\r" });
+  assert.match(wp, /define\( 'DB_PASSWORD', 'p\\'q\\\\r' \);/);
+  assert.equal((wp.match(/_KEY'|_SALT'/g) ?? []).length, 8);
+  const bb = renderPhpbbConfig({
+    admin: { user: 'admin', password: "it's-long-pass", email: 'a@b.test' },
+    title: 'My Board',
+    db: { name: 'a_phpbb', user: 'a_phpbb', password: 'x' },
+    url: 'http://203.0.113.10/~acme/forum/',
+  });
+  assert.match(bb, /password: 'it''s-long-pass'/);
+  assert.match(bb, /server_name: '203\.0\.113\.10'/);
+  assert.match(bb, /script_path: '\/~acme\/forum'/);
+  assert.match(bb, /server_port: 80/);
+  assert.match(bb, /dbms: mysqli/);
+  const root = renderPhpbbConfig({ admin: { user: 'a', password: 'b', email: 'c' }, title: 't', db: { name: 'n', user: 'u', password: 'p' }, url: 'https://ex.test/' });
+  assert.match(root, /script_path: '\/'/);
+  assert.match(root, /server_port: 443/);
+  assert.match(root, /cookie_secure: true/);
+  assert.match(renderPhpMyAdminConfig(), /\$cfg\['blowfish_secret'\] = '[A-Za-z0-9]{32}';/);
+});
+
+test('IP preview renderer', async () => {
+  const { renderIpSite } = await import('../src/server/services/web.ts');
+  const conf = renderIpSite([{ username: 'acme', status: 'active' }, { username: 'zed', status: 'suspended' }]);
+  assert.match(conf, /listen 80 default_server;/);
+  assert.match(conf, /location = \/~acme \{\n\s+return 301 \/~acme\/;/);
+  assert.match(conf, /fastcgi_pass unix:\/run\/php\/vex-acme\.sock;/);
+  assert.doesNotMatch(conf, /vex-zed\.sock/);
+  assert.match(conf, /location \^~ \/~zed\/ \{\n\s+root .*suspended;/);
+});

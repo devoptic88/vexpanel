@@ -15,6 +15,8 @@ import { closeMysql } from './services/mysql.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import userRoutes from './routes/user.js';
+import appRoutes from './routes/apps.js';
+import { failInterruptedInstalls } from './services/apps.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -65,6 +67,7 @@ export async function buildApp() {
   await app.register(authRoutes);
   await app.register(adminRoutes);
   await app.register(userRoutes);
+  await app.register(appRoutes);
 
   app.get('/api/health', async () => ({ ok: true, version: config.version, dryRun: config.dryRun }));
 
@@ -97,6 +100,7 @@ async function main() {
   }
   await bootstrapAdmin();
   purgeExpiredSessions();
+  failInterruptedInstalls();
   setInterval(purgeExpiredSessions, 3600_000).unref();
 
   const app = await buildApp();

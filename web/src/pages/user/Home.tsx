@@ -1,13 +1,14 @@
-import { Clock, Database, FolderOpen, Globe, KeyRound, Mail, Network, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Clock, Database, LayoutGrid, FolderOpen, Globe, KeyRound, Mail, Network, RefreshCw, ShieldCheck } from 'lucide-react';
 import { formatBytes, get, post, type Pkg } from '../../api';
 import { ErrorBox, Link, Loading, Module, PageHead, Rail, useAction, useLoad } from '../../components/ui';
 
 interface Overview {
-  username: string; domain: string; home: string; serverIp: string; nameservers: string[]; hostname: string; package: Pkg;
+  username: string; domain: string; home: string; serverIp: string; previewUrl: string; nameservers: string[]; hostname: string; package: Pkg;
   usage: { diskBytes: number; diskCheckedAt: string | null; addon: number; sub: number; databases: number; email: number; cron: number };
 }
 
 const TOOLS = [
+  { to: '/apps', icon: <LayoutGrid />, label: 'Apps', hint: 'One-click forums, blogs and more' },
   { to: '/files', icon: <FolderOpen />, label: 'File manager', hint: 'Upload, edit and organize site files' },
   { to: '/domains', icon: <Globe />, label: 'Domains', hint: 'Addon domains and subdomains' },
   { to: '/ssl', icon: <ShieldCheck />, label: 'SSL certificates', hint: "Free HTTPS from Let's Encrypt" },
@@ -29,7 +30,8 @@ export default function Home() {
   return (
     <>
       <PageHead title={data.domain} sub={<>Hosting account <strong>{data.username}</strong> on the {p.name} package</>}>
-        <a className="btn" href={`http://${data.domain}`} target="_blank" rel="noreferrer">Visit site</a>
+        <a className="btn" href={data.previewUrl} target="_blank" rel="noreferrer">Open by IP</a>
+        <a className="btn" href={`http://${data.domain}`} target="_blank" rel="noreferrer">Visit domain</a>
       </PageHead>
 
       <div className="grid-2 home-grid">
@@ -65,6 +67,7 @@ export default function Home() {
           <Module title="Connection details">
             <dl className="kv">
               <dt>Server IP</dt><dd><code>{data.serverIp}</code></dd>
+              <dt>Site by IP</dt><dd><a href={data.previewUrl} target="_blank" rel="noreferrer"><code>{data.previewUrl}</code></a></dd>
               <dt>Nameservers</dt><dd>{data.nameservers.map((n) => <div key={n}><code>{n}</code></div>)}</dd>
               <dt>SFTP</dt><dd><code>{data.username}@{data.hostname}</code></dd>
               <dt>Home folder</dt><dd><code>{data.home}</code></dd>

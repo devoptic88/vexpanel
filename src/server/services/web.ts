@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { all, one, type DomainRow, type UserRow } from '../db.js';
@@ -156,6 +157,100 @@ export async function removeVhost(domainName: string) {
   await removePath(vhostPath(domainName));
 }
 
+// ---------- IP preview: http://<server-ip>/~username/ ----------
+//
+// Lets people reach an account's main site before any domain points at the server.
+// A default nginx server answers requests by IP. Each active account gets a location that
+// serves its public_html through a symlink map (/var/lib/vexpanel/ipsites/~user), with PHP
+// going to that account's own FPM pool. Every site shares the IP's origin, so this is meant
+// for previews and testing, not production.
+
+export const IP_SITE_PATH = `${NGINX_DIR}/000-ip-preview.conf`;
+export const ipSitesDir = () => path.join(config.dataDir, 'ipsites');
+export const previewUrl = (username: string) => `http://${config.serverIp}/~${username}/`;
+
+/** Render the default server that answers by IP. Pure function, unit-tested. */
+export function renderIpSite(users: Array<Pick<UserRow, 'username' | 'status'>>): string {
+  const root = ipSitesDir();
+  const blocks = users.map((u) => {
+    if (u.status === 'suspended') {
+      return `    location ^~ /~${u.username}/ {
+        root ${suspendedRoot()};
+        try_files /index.html =503;
+    }`;
+    }
+    return `    location = /~${u.username} {
+        return 301 /~${u.username}/;
+    }
+    location ^~ /~${u.username}/ {
+        root ${root};
+        index index.php index.html index.htm;
+        try_files $uri $uri/ /~${u.username}/index.php?$args;
+
+        location ~ /\\. {
+            deny all;
+        }
+        location ~ \\.php$ {
+            try_files $uri =404;
+            fastcgi_split_path_info ^(.+\\.php)(/.+)$;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_pass unix:${fpmSocket(u.username)};
+        }
+    }`;
+  });
+  return `# Managed by VEXPANEL — changes here are overwritten.
+# Answers requests made to the server's IP address. Account sites are at /~username/.
+server {
+    listen 80 default_server;${v6('listen [::]:80 default_server;')}
+    server_name _;
+    access_log ${NGINX_LOG_DIR}/ip-preview.access.log;
+    error_log ${NGINX_LOG_DIR}/ip-preview.error.log;
+    client_max_body_size 128m;
+
+    location = / {
+        default_type text/html;
+        return 200 '<!doctype html><meta charset="utf-8"><title>${config.hostname}</title><body style="font:16px system-ui;display:grid;place-items:center;min-height:90vh;color:#1b2333"><p>This server is managed by VEXPANEL.</p>';
+    }
+
+    location / {
+        return 404;
+    }
+
+${blocks.join('\n\n')}
+}
+`;
+}
+
+/** Rewrite the IP preview server and its symlink map from the database. Caller reloads nginx. */
+export async function writeIpSites() {
+  const users = all<UserRow>("SELECT * FROM users WHERE role = 'user' ORDER BY username");
+  const dir = ipSitesDir();
+  // The data dir belongs to the panel (not a system path), so it isn't redirected in dry-run mode.
+  await fs.mkdir(dir, { recursive: true, mode: 0o755 });
+  // Symlink map: ~user -> the account's main web root.
+  const wanted = new Map<string, string>();
+  for (const u of users) {
+    const main = one<DomainRow>("SELECT * FROM domains WHERE user_id = ? AND type = 'main'", u.id);
+    if (main) wanted.set(`~${u.username}`, main.docroot);
+  }
+  for (const name of await fs.readdir(dir).catch(() => [] as string[])) {
+    if (!wanted.has(name)) await fs.rm(path.join(dir, name), { force: true });
+  }
+  for (const [name, target] of wanted) {
+    const link = path.join(dir, name);
+    const current = await fs.readlink(link).catch(() => null);
+    if (current === target) continue;
+    await fs.rm(link, { force: true });
+    await fs.symlink(target, link);
+  }
+  // Ubuntu's stock site also claims default_server on port 80; it has to go for ours to load.
+  await removePath('/etc/nginx/sites-enabled/default');
+  await ensureDir(NGINX_DIR);
+  await ensureDir(NGINX_LOG_DIR);
+  await writeChecked(IP_SITE_PATH, renderIpSite(users.filter((u) => wanted.has(`~${u.username}`))), nginxTest);
+}
+
 /** Re-render every vhost and the FPM pool for an account (used after suspend/unsuspend/SSL changes). */
 export async function applyAccountWeb(userId: number) {
   const user = one<UserRow>('SELECT * FROM users WHERE id = ?', userId);
@@ -168,6 +263,15 @@ export async function applyAccountWeb(userId: number) {
   for (const d of all<DomainRow>('SELECT * FROM domains WHERE user_id = ?', userId)) {
     await writeVhost(d, user);
   }
-  await reloadFpm();
-  await reloadNginx();
+  await writeIpSites();
+  // Order matters so requests never reach a PHP pool that's gone: when suspending, nginx
+  // switches to the suspended page before the pool is removed; when restoring, the pool
+  // starts before nginx sends traffic to it.
+  if (user.status === 'suspended') {
+    await reloadNginx();
+    await reloadFpm();
+  } else {
+    await reloadFpm();
+    await reloadNginx();
+  }
 }

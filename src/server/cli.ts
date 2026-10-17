@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { all, exec, one } from './db.js';
 import { hashPassword } from './auth.js';
-import { applyAccountWeb } from './services/web.js';
+import { applyAccountWeb, reloadNginx, writeIpSites } from './services/web.js';
 import { applyZone } from './services/dns.js';
 import { applyMail } from './services/mail.js';
 import { applyCron } from './services/cron.js';
@@ -35,6 +35,8 @@ async function main() {
         console.log(`zone ${d.name}`);
         await applyZone(d.id);
       }
+      await writeIpSites();
+      await reloadNginx();
       await applyMail();
       console.log('done');
       break;

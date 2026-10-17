@@ -35,8 +35,8 @@ export DEBIAN_FRONTEND=noninteractive
 echo "postfix postfix/main_mailer_type select Internet Site" | debconf-set-selections
 echo "postfix postfix/mailname string ${HOSTNAME_FQDN}" | debconf-set-selections
 apt-get update -q
-apt-get install -y -q ca-certificates curl gnupg acl quota openssl ssl-cert openssh-server iproute2 cron \
-  nginx "php${PHP_VERSION}-fpm" "php${PHP_VERSION}"-{mysql,curl,gd,mbstring,xml,zip,intl,bcmath,imagick} \
+apt-get install -y -q ca-certificates curl gnupg acl quota openssl ssl-cert openssh-server iproute2 cron unzip bzip2 xz-utils \
+  nginx "php${PHP_VERSION}-fpm" "php${PHP_VERSION}-cli" "php${PHP_VERSION}"-{mysql,curl,gd,mbstring,xml,zip,intl,bcmath,imagick,gmp} \
   mariadb-server postfix dovecot-imapd dovecot-lmtpd bind9 bind9-utils certbot
 
 if ! command -v node >/dev/null || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 22 ]]; then
@@ -119,6 +119,8 @@ if [[ ! -f "$ETC_DIR/panel.crt" ]]; then
   ln -sf /etc/ssl/private/ssl-cert-snakeoil.key "$ETC_DIR/panel.key"
 fi
 rm -f /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.disabled
+# The panel serves the server's IP itself (account previews at /~username/), replacing Ubuntu's stock page.
+rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl enable --now nginx "php${PHP_VERSION}-fpm"
 systemctl reload nginx
@@ -269,6 +271,10 @@ systemctl enable --now cron
 systemctl daemon-reload
 systemctl enable vexpanel
 systemctl restart vexpanel
+
+# Re-render every account's config with this version's templates (safe to run any time).
+for _ in $(seq 1 20); do curl -fsS http://127.0.0.1:2086/api/health >/dev/null 2>&1 && break; sleep 1; done
+/usr/local/bin/vexpanel rebuild || echo "warning: vexpanel rebuild reported a problem; check: journalctl -u vexpanel"
 
 if command -v ufw >/dev/null && ufw status | grep -q active; then
   log "Opening firewall ports"

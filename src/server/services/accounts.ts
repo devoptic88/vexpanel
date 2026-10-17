@@ -13,7 +13,7 @@ import { fileOp } from './files.js';
 import { applyMail, removeMailboxDir } from './mail.js';
 import * as mysql from './mysql.js';
 import { deleteCertificate } from './ssl.js';
-import { applyAccountWeb, fpmPoolPath, homeOf, reloadFpm, reloadNginx, removeVhost, renderFpmPool, writeVhost } from './web.js';
+import { applyAccountWeb, fpmPoolPath, homeOf, reloadFpm, reloadNginx, removeVhost, renderFpmPool, writeIpSites, writeVhost } from './web.js';
 
 const WELCOME_PAGE = (domain: string) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -127,6 +127,7 @@ export function createAccount(input: CreateAccountInput): Promise<UserRow> {
       await reloadFpm();
       const main = one<DomainRow>("SELECT * FROM domains WHERE user_id = ? AND type = 'main'", user.id)!;
       await writeVhost(main, user);
+      await writeIpSites();
       await reloadNginx();
       await applyZone(main.id);
       await applyMail();
@@ -195,6 +196,7 @@ export function terminateAccount(userId: number): Promise<string[]> {
     }
     await attempt('php-fpm pool', () => removePath(fpmPoolPath(u.username)));
     await attempt('reload php-fpm', reloadFpm);
+    await attempt('ip preview', writeIpSites);
     await attempt('reload nginx', reloadNginx);
     await attempt('mail maps', applyMail);
     await attempt('linux user', () => run('userdel', ['--remove', u.username], { allowFail: true }));

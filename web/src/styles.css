@@ -45,6 +45,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body, #root { height: 100%; }
 body {
   margin: 0;
@@ -158,6 +159,14 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 .tool:hover { border-color: var(--action); }
 .tool svg { width: 22px; height: 22px; color: var(--action); }
 .tool small { color: var(--muted); font-weight: 400; font-size: 0.8rem; line-height: 1.35; }
+
+/* ---------- App installer ---------- */
+.apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
+.app-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--face-2); }
+.app-card-head { display: flex; align-items: center; gap: 10px; }
+.app-card-head svg { width: 20px; height: 20px; color: var(--action); flex: none; }
+.app-card p { color: var(--muted); font-size: 0.88rem; line-height: 1.45; flex: 1; }
+.btn.primary { background: var(--action); border-color: var(--action); color: var(--action-ink); }
 
 /* ---------- Stats ---------- */
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; }

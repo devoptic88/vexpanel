@@ -131,6 +131,24 @@ const migrations: string[] = [
          ('Business', 10240, 5, 25, 10, 50, 20),
          ('Unlimited', 51200, 1000, 1000, 1000, 1000, 1000);
   `,
+  `
+  CREATE TABLE app_installs (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    app_id TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    url TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('installing','ready','failed','removing')),
+    message TEXT NOT NULL DEFAULT '',
+    database_id INTEGER REFERENCES databases(id) ON DELETE SET NULL,
+    db_user_id INTEGER REFERENCES db_users(id) ON DELETE SET NULL,
+    db_password TEXT NOT NULL DEFAULT '',
+    setup_url TEXT NOT NULL DEFAULT '',
+    admin_url TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  `,
 ];
 
 function migrate() {
