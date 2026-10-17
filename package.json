@@ -1,6 +1,6 @@
 {
   "name": "vexpanel",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "VEXPANEL — a self-hosted web hosting control panel (cPanel-style) for Ubuntu",
   "license": "MIT",
   "private": true,
